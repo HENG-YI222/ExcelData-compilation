@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Paxlovid 住民使用回報比對系統</title>
+  <!-- 引入 SheetJS 處理 Excel 讀寫 -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 24px 16px; line-height: 1.5; -webkit-tap-highlight-color: transparent; }
+    .container { max-width: 960px; margin: 0 auto; }
+    
+    header { margin-bottom: 24px; }
+    h1 { font-size: 24px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+    p.subtitle { color: var(--text-muted); font-size: 14px; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; flex-direction: column; }
+    .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: #1e293b; }
+    
+    .dropzone {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 2px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 24px 12px;
+      text-align: center;
+      cursor: pointer;
+      background: #f8fafc;
+      transition: all 0.2s ease;
+      min-height: 130px;
+    }
+    .dropzone:active, .dropzone.dragover { border-color: var(--primary); background: #f0f7ff; }
+    .dropzone input[type="file"] { display: none; }
+    .dropzone-title { font-size: 15px; font-weight: 600; color: #2563eb; margin-bottom: 4px; }
+    .dropzone-desc { font-size: 13px; color: var(--text-muted); }
+
+    .file-status { margin-top: 10px; font-size: 13px; color: var(--text-muted); max-height: 110px; overflow-y: auto; }
+    .file-status li { list-style: none; padding: 4px 0; border-bottom: 1px dashed #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .actions { margin-bottom: 20px; }
+    button#btnProcess {
+      width: 100%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 14px 20px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+      box-shadow: 0 2px 6px rgba(37,99,235,0.25);
+    }
+    button#btnProcess:hover:not(:disabled) { background: var(--primary-hover); }
+    button#btnProcess:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; opacity: 0.8; }
+
+    .log-box {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 14px 16px;
+      border-radius: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      min-height: 90px;
+      max-height: 180px;
+      overflow-y: auto;
+      white-space: pre-line;
+      margin-bottom: 20px;
+      word-break: break-all;
+    }
+
+    .table-container { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; margin-top: 16px; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 500px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+    th { background: #f1f5f9; font-weight: 600; color: #334155; }
+    tr:last-child td { border-bottom: none; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>Paxlovid 住民使用回報比對系統</h1>
+    <p class="subtitle">自動整合多份 A（住民名冊）與 B（使用回報表），產出符合格式之 P-彙整結果</p>
+  </header>
+
+  <div class="grid">
+    <!-- 資料 A -->
+    <div class="card">
+      <h2>1. 匯入資料 A（住民資料匯出）</h2>
+      <label class="dropzone" for="fileA" id="dropA">
+        <input type="file" id="fileA" multiple accept=".xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+        <span class="dropzone-title">點擊或拖曳上傳 A 檔案</span>
+        <span class="dropzone-desc">可選取多份「住民資料匯出」</span>
+      </label>
+      <ul class="file-status" id="listA"></ul>
+    </div>
+
+    <!-- 資料 B -->
+    <div class="card">
+      <h2>2. 匯入資料 B（使用回報資料明細表）</h2>
+      <label class="dropzone" for="fileB" id="dropB">
+        <input type="file" id="fileB" multiple accept=".xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+        <span class="dropzone-title">點擊或拖曳上傳 B 檔案</span>
+        <span class="dropzone-desc">可選取多份「使用回報明細表」</span>
+      </label>
+      <ul class="file-status" id="listB"></ul>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btnProcess" disabled>執行比對並輸出 P-彙整結果</button>
+  </div>
+
+  <div class="log-box" id="logBox">系統準備就緒，請上傳資料 A 與資料 B。</div>
+
+  <div class="table-container" id="previewContainer" style="display:none;">
+    <table>
+      <thead>
+        <tr>
+          <th>回報單位</th>
+          <th>用藥者姓名</th>
+          <th>身分證字號</th>
+          <th>給藥日期</th>
+          <th>填報日期</th>
+          <th>用藥對象 / 備註</th>
+        </tr>
+      </thead>
+      <tbody id="previewBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  let filesA = [];
+  let filesB = [];
+
+  const fileAInput = document.getElementById('fileA');
+  const fileBInput = document.getElementById('fileB');
+  const dropA = document.getElementById('dropA');
+  const dropB = document.getElementById('dropB');
+  const listA = document.getElementById('listA');
+  const listB = document.getElementById('listB');
+  const btnProcess = document.getElementById('btnProcess');
+  const logBox = document.getElementById('logBox');
+  const previewContainer = document.getElementById('previewContainer');
+  const previewBody = document.getElementById('previewBody');
+
+  function log(msg) {
+    logBox.innerText += "\n" + msg;
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  function checkReady() {
+    btnProcess.disabled = !(filesA.length > 0 && filesB.length > 0);
+  }
+
+  // 處理檔案選取
+  function handleFilesA(selectedFiles) {
+    filesA = Array.from(selectedFiles);
+    listA.innerHTML = filesA.map(f => `<li>✓ ${f.name}</li>`).join('');
+    log(`已載入 ${filesA.length} 個資料 A 檔案`);
+    checkReady();
+  }
+
+  function handleFilesB(selectedFiles) {
+    filesB = Array.from(selectedFiles);
+    listB.innerHTML = filesB.map(f => `<li>✓ ${f.name}</li>`).join('');
+    log(`已載入 ${filesB.length} 個資料 B 檔案`);
+    checkReady();
+  }
+
+  fileAInput.addEventListener('change', (e) => handleFilesA(e.target.files));
+  fileBInput.addEventListener('change', (e) => handleFilesB(e.target.files));
+
+  // 支援電腦端拖曳事件
+  function setupDragDrop(dropZone, onDropFiles) {
+    ['dragenter', 'dragover'].forEach(name => {
+      dropZone.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+      dropZone.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+      });
+    });
+    dropZone.addEventListener('drop', (e) => {
+      if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+        onDropFiles(e.dataTransfer.files);
+      }
+    });
+  }
+
+  setupDragDrop(dropA, handleFilesA);
+  setupDragDrop(dropB, handleFilesB);
+
+  function readFileAsync(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  btnProcess.addEventListener('click', async () => {
+    btnProcess.disabled = true;
+    log("開始解析資料 A (住民名冊)...");
+
+    try {
+      const residentSet = new Set();
+
+      for (const f of filesA) {
+        const data = await readFileAsync(f);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+
+        json.forEach(row => {
+          const id = row['住民身分證字號'] || row['身分證字號'];
+          if (id) {
+            residentSet.add(String(id).trim().toUpperCase());
+          }
+        });
+      }
+      log(`資料 A 解析完成，取得 ${residentSet.size} 筆不重複住民身分證字號`);
+
+      log("開始比對資料 B (使用回報表)...");
+      let matchedRows = [];
+      let templateHeader = null;
+
+      for (const f of filesB) {
+        const data = await readFileAsync(f);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        if (!templateHeader && rawData.length >= 6) {
+          templateHeader = rawData.slice(0, 6);
+        }
+
+        for (let r = 6; r < rawData.length; r++) {
+          const row = rawData[r];
+          if (!row || row.length === 0) continue;
+          
+          const id = row[8] ? String(row[8]).trim().toUpperCase() : '';
+          if (id && residentSet.has(id)) {
+            matchedRows.push(row);
+          }
+        }
+      }
+
+      log(`比對完成！共篩選出 ${matchedRows.length} 筆在冊住民用藥紀錄`);
+
+      // 預覽前 20 筆
+      previewBody.innerHTML = matchedRows.slice(0, 20).map(r => `
+        <tr>
+          <td>${r[4] || ''}</td>
+          <td>${r[5] || ''}</td>
+          <td>${r[8] || ''}</td>
+          <td>${r[13] || ''}</td>
+          <td>${r[14] || ''}</td>
+          <td>${r[15] || r[20] || ''}</td>
+        </tr>
+      `).join('');
+      previewContainer.style.display = 'block';
+
+      // 產生 Excel 活頁簿
+      const exportData = [...(templateHeader || []), ...matchedRows];
+      const newSheet = XLSX.utils.aoa_to_sheet(exportData);
+      const newWb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(newWb, newSheet, "Sheet1");
+      XLSX.utils.book_append_sheet(newWb, XLSX.utils.aoa_to_sheet([]), "Sheet2");
+      XLSX.utils.book_append_sheet(newWb, XLSX.utils.aoa_to_sheet([]), "Sheet3");
+
+      const now = new Date();
+      const dateStr = `${now.getFullYear() - 1911}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+      const exportFilename = `P-彙整結果_(${dateStr}).xlsx`;
+
+      // 相容 iOS Safari / Chrome / PC 的 Blob 下載機制
+      const wbout = XLSX.write(newWb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportFilename;
+      document.body.appendChild(a);
+      a.click();
+
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1000);
+
+      log(`檔案處理完成，已觸發下載：${exportFilename}`);
+
+    } catch (err) {
+      log(`[錯誤] 處理失敗：${err.message}`);
+    } finally {
+      btnProcess.disabled = false;
+    }
+  });
+</script>
+
+</body>
+</html>
